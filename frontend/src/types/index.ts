@@ -15,6 +15,8 @@ export enum StemType {
     BASS = 'bass',
     OTHER = 'other',
     CLICK = 'click',
+    MIDI = 'midi',
+    SCORE = 'score',
 }
 
 export interface StemInfo {

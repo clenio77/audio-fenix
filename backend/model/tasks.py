@@ -118,6 +118,27 @@ def process_audio(self, project_id: str, input_file_path: str) -> Dict[str, str]
         except Exception as e:
             logger.warning(f"Falha ao detectar acordes: {e}")
             print(f"⚠️ Acordes não detectados: {e}")
+
+        # Transcrever partitura
+        self.update_state(state="PROCESSING", meta={"progress": 95, "status": "Transcrevendo partitura..."})
+        try:
+            from .transcriber import music_transcriber
+            
+            # Preferir usar o stem 'other' (instrumental) para transcrição, se disponível
+            transcription_input = Path(stems_dict.get("other", input_path))
+            
+            midi_path, xml_path = music_transcriber.transcribe(transcription_input, output_dir)
+            
+            if midi_path:
+                stems_dict["midi"] = midi_path
+                print(f"🎹 MIDI gerado: {midi_path}")
+            if xml_path:
+                stems_dict["score"] = xml_path
+                print(f"🎼 Partitura (XML) gerada: {xml_path}")
+                
+        except Exception as e:
+            logger.warning(f"Falha na transcrição musical: {e}")
+            print(f"⚠️ Transcrição não realizada: {e}")
         
         # Salvar stems no banco de dados
         if project:

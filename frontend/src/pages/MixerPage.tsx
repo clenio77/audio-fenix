@@ -60,7 +60,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         [StemType.DRUMS]: 100,
         [StemType.BASS]: 100,
         [StemType.OTHER]: 100,
-        [StemType.CLICK]: 50, // Metrônomo começa em 50%
+        [StemType.CLICK]: 50,
+        [StemType.MIDI]: 0,
+        [StemType.SCORE]: 0,
     })
 
     const [mutes, setMutes] = useState<Record<StemType, boolean>>({
@@ -68,7 +70,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         [StemType.DRUMS]: false,
         [StemType.BASS]: false,
         [StemType.OTHER]: false,
-        [StemType.CLICK]: true, // Metrônomo começa mutado
+        [StemType.CLICK]: true,
+        [StemType.MIDI]: true,
+        [StemType.SCORE]: true,
     })
 
     const [solos, setSolos] = useState<Record<StemType, boolean>>({
@@ -77,6 +81,8 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         [StemType.BASS]: false,
         [StemType.OTHER]: false,
         [StemType.CLICK]: false,
+        [StemType.MIDI]: false,
+        [StemType.SCORE]: false,
     })
 
     const hasSoloActive = Object.values(solos).some(s => s)
@@ -320,7 +326,7 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         )
     }
 
-    const stemConfig = {
+    const stemConfig: Record<string, any> = {
         [StemType.VOCALS]: { icon: '🎤', label: 'VOCAL', gradient: 'from-pink-600/30 to-purple-600/30', border: 'border-pink-500/30', faderColor: 'from-pink-500 to-pink-400', buttonColor: 'bg-pink-500', textColor: 'text-pink-400', hexColor: '#ec4899' },
         [StemType.DRUMS]: { icon: '🥁', label: 'BATERIA', gradient: 'from-orange-600/30 to-amber-600/30', border: 'border-orange-500/30', faderColor: 'from-orange-500 to-yellow-400', buttonColor: 'bg-orange-500', textColor: 'text-orange-400', hexColor: '#f97316' },
         [StemType.BASS]: { icon: '🎸', label: 'BAIXO', gradient: 'from-green-600/30 to-emerald-600/30', border: 'border-green-500/30', faderColor: 'from-green-500 to-emerald-400', buttonColor: 'bg-green-500', textColor: 'text-green-400', hexColor: '#22c55e' },
@@ -348,8 +354,8 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 </svg>
             </div>
 
-            {/* Elementos de áudio ocultos */}
-            {project.stems?.map(stem => (
+            {/* Elementos de áudio ocultos - apenas tipos de áudio */}
+            {project.stems?.filter(stem => [StemType.VOCALS, StemType.DRUMS, StemType.BASS, StemType.OTHER, StemType.CLICK].includes(stem.type as StemType)).map(stem => (
                 <audio
                     key={stem.type}
                     ref={el => { audioRefs.current[stem.type] = el }}
@@ -365,11 +371,39 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                     <span>Voltar</span>
                 </button>
 
-                <button onClick={handleExport} disabled={exporting}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold rounded-xl hover:from-pink-400 hover:to-purple-500 transition-all shadow-lg shadow-purple-500/25 disabled:opacity-50">
-                    <Download className="w-5 h-5" />
-                    {exporting ? 'Exportando...' : 'Exportar Mix'}
-                </button>
+                <div className="flex items-center gap-3">
+                    {project.stems?.some(s => s.type === StemType.SCORE) && (
+                        <button
+                            onClick={() => {
+                                const score = project.stems?.find(s => s.type === StemType.SCORE);
+                                if (score) window.open(apiService.getDownloadUrl(score.url), '_blank');
+                            }}
+                            className="flex items-center gap-2 px-4 py-3 bg-white/5 text-gray-300 font-semibold rounded-xl hover:bg-white/10 transition-all border border-white/10"
+                        >
+                            <Download className="w-5 h-5 text-purple-400" />
+                            <span>Baixar Partitura</span>
+                        </button>
+                    )}
+
+                    {project.stems?.some(s => s.type === StemType.MIDI) && (
+                        <button
+                            onClick={() => {
+                                const midi = project.stems?.find(s => s.type === StemType.MIDI);
+                                if (midi) window.open(apiService.getDownloadUrl(midi.url), '_blank');
+                            }}
+                            className="flex items-center gap-2 px-4 py-3 bg-white/5 text-gray-300 font-semibold rounded-xl hover:bg-white/10 transition-all border border-white/10"
+                        >
+                            <Download className="w-5 h-5 text-blue-400" />
+                            <span>Baixar MIDI</span>
+                        </button>
+                    )}
+
+                    <button onClick={handleExport} disabled={exporting}
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold rounded-xl hover:from-pink-400 hover:to-purple-500 transition-all shadow-lg shadow-purple-500/25 disabled:opacity-50">
+                        <Download className="w-5 h-5" />
+                        {exporting ? 'Exportando...' : 'Exportar Mix'}
+                    </button>
+                </div>
             </div>
 
             {/* Chord Display */}
