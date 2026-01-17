@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: isomix-db
+    environment:
+      POSTGRES_DB: isomix
+      POSTGRES_USER: isomix_user
+      POSTGRES_PASSWORD: isomix_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U isomix_user -d isomix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (Message Broker)
+  redis:
+    image: redis:7-alpine
+    container_name: isomix-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: isomix-backend
+    command: uvicorn application.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+      - audio_storage:/app/storage
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://isomix_user:isomix_pass@db:5432/isomix
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/app/storage
+      - AI_MODEL=demucs
+      - ENVIRONMENT=development
+      - JWT_SECRET_KEY=isomix-production-secret-key-change-in-production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery Worker (AI Processing)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: isomix-worker
+    command: celery -A model.worker worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend:/app
+      - audio_storage:/app/storage
+    environment:
+      - DATABASE_URL=postgresql://isomix_user:isomix_pass@db:5432/isomix
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/app/storage
+      - AI_MODEL=demucs
+    depends_on:
+      - redis
+      - db
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: isomix-frontend
+    command: npm run dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  audio_storage:
+
+networks:
+  default:
+    name: isomix-network

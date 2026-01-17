@@ -1,0 +1,83 @@
+.
+├── backend
+│   ├── application
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── middleware
+│   │   │   └── __init__.py
+│   │   ├── routes
+│   │   │   ├── export.py
+│   │   │   ├── __init__.py
+│   │   │   ├── status.py
+│   │   │   └── upload.py
+│   │   └── schemas
+│   │       ├── __init__.py
+│   │       └── project.py
+│   ├── business
+│   │   ├── __init__.py
+│   │   └── usage_limiter.py
+│   ├── Dockerfile
+│   ├── domain
+│   │   ├── database.py
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   │   ├── base.py
+│   │   │   ├── __init__.py
+│   │   │   ├── project.py
+│   │   │   └── stem.py
+│   │   ├── repositories
+│   │   │   └── __init__.py
+│   │   ├── services
+│   │   │   └── __init__.py
+│   │   └── validators
+│   │       ├── audio.py
+│   │       └── __init__.py
+│   ├── model
+│   │   ├── demucs_engine.py
+│   │   ├── __init__.py
+│   │   ├── separator.py
+│   │   ├── tasks.py
+│   │   └── worker.py
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── storage
+│   │   ├── exports
+│   │   ├── stems
+│   │   └── uploads
+│   └── tests
+├── docker-compose.yml
+├── docs
+│   ├── ARCHITECTURE.md
+│   ├── PRD.md
+│   ├── SEQUENCE_DIAGRAM.md
+│   └── USER_STORIES.md
+├── frontend
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── README.md
+│   ├── src
+│   │   ├── App.tsx
+│   │   ├── components
+│   │   │   └── MixerChannel.tsx
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   ├── pages
+│   │   │   ├── MixerPage.tsx
+│   │   │   └── UploadPage.tsx
+│   │   ├── services
+│   │   │   └── api.ts
+│   │   ├── store
+│   │   └── types
+│   │       └── index.ts
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
+├── PROJECT_STATUS.md
+├── QUICKSTART.md
+├── README.md
+└── STRUCTURE.txt
+
+26 directories, 55 files

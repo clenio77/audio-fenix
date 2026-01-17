@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-mixer-bg text-white font-sans antialiased;
+  }
+}
+
+@layer components {
+
+  /* Fader vertical customizado */
+  .fader-track {
+    @apply w-2 h-full bg-mixer-fader rounded-full relative;
+  }
+
+  .fader-thumb {
+    @apply w-8 h-8 bg-mixer-accent rounded-full shadow-lg cursor-pointer;
+    @apply hover:scale-110 transition-transform;
+  }
+
+  /* Botões do mixer */
+  .mixer-button {
+    @apply w-10 h-10 rounded-full font-bold text-sm;
+    @apply transition-all duration-200;
+    @apply hover:scale-105 active:scale-95;
+  }
+
+  .mixer-button-mute {
+    @apply mixer-button bg-gray-600 text-white;
+  }
+
+  .mixer-button-mute.active {
+    @apply bg-red-500;
+  }
+
+  .mixer-button-solo {
+    @apply mixer-button bg-gray-600 text-white;
+  }
+
+  .mixer-button-solo.active {
+    @apply bg-yellow-500;
+  }
+
+  /* Canal do mixer */
+  .mixer-channel {
+    @apply flex flex-col items-center h-full w-24 bg-mixer-panel border-r border-gray-700 p-4;
+  }
+
+  /* Waveform container */
+  .waveform-container {
+    @apply w-full h-20 bg-black/50 rounded overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 10px currentColor;
+  }
+
+  .glass {
+    @apply bg-white/10 backdrop-blur-md border border-white/20;
+  }
+}
