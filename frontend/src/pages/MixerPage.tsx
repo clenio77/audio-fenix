@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
     ArrowLeft, Download, Loader2, Play, Pause, Square, RotateCcw, Headphones,
-    Repeat, Guitar, Waves, Zap
+    Repeat, Guitar, Waves, Zap, Music, FileText
 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
@@ -21,6 +21,7 @@ import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
 import SheetMusicViewer from '@/components/SheetMusicViewer'
+import ChordList from '@/components/ChordList'
 
 interface MixerPageProps {
     projectId: string
@@ -52,6 +53,7 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
     // Visualização
     const [showScore, setShowScore] = useState(false)
+    const [showChords, setShowChords] = useState(false)
 
     // Refs para os elementos de áudio
     const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
@@ -340,6 +342,21 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
     const stemOrder = [StemType.VOCALS, StemType.DRUMS, StemType.BASS, StemType.OTHER, StemType.CLICK]
 
+    const handleDownloadChords = () => {
+        if (!chords.length) return;
+
+        const content = chords.map(c => `[${Math.floor(c.time / 60)}:${(c.time % 60).toFixed(0).padStart(2, '0')}] ${c.chord}`).join('\n');
+        const blob = new Blob([`CIFRA GERADA PELO ISOMIX STUDIO\nProjeto: ${project?.project_id}\n\n${content}`], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cifra-${project?.project_id}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-black relative overflow-hidden">
             {/* Waveform Background */}
@@ -376,6 +393,26 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 </button>
 
                 <div className="flex items-center gap-3">
+                    {chords.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowChords(!showChords)}
+                                className={`flex items-center gap-2 px-4 py-3 font-semibold rounded-xl transition-all border ${showChords ? 'bg-amber-600 text-white border-amber-400 shadow-lg shadow-amber-500/20' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
+                            >
+                                <Music className={`w-5 h-5 ${showChords ? 'text-white' : 'text-amber-400'}`} />
+                                <span>{showChords ? 'Ocultar Cifra' : 'Ver Cifra'}</span>
+                            </button>
+
+                            <button
+                                onClick={handleDownloadChords}
+                                className="flex items-center justify-center p-3 bg-white/5 text-gray-300 rounded-xl hover:bg-white/10 transition-all border border-white/10"
+                                title="Baixar Cifra (TXT)"
+                            >
+                                <FileText className="w-5 h-5 text-amber-400" />
+                            </button>
+                        </div>
+                    )}
+
                     {project.stems?.some(s => s.type === StemType.SCORE) && (
                         <div className="flex items-center gap-2">
                             <button
@@ -438,7 +475,15 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 </div>
             )}
 
-            {/* Sheet Music Viewer Section */}
+            {/* Chords Sequence (Cifra) Viewer */}
+            {showChords && chords.length > 0 && (
+                <div className="relative z-10 px-8 mb-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <ChordList
+                        chords={chords}
+                        currentTime={currentTime}
+                    />
+                </div>
+            )}
             {showScore && project.stems?.some(s => s.type === StemType.SCORE) && (
                 <div className="relative z-10 px-8 mb-4 animate-in fade-in slide-in-from-top-4 duration-500">
                     <SheetMusicViewer
