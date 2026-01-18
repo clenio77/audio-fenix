@@ -30,44 +30,70 @@ class LyricTranscriber:
 
     def transcribe(self, audio_path: Path, output_dir: Path) -> Optional[str]:
         """
-        Transcreve o áudio e salva em JSON com timestamps.
-        
-        Args:
-            audio_path: Caminho do arquivo de áudio (preferencialmente o stem 'vocals')
-            output_dir: Diretório onde o JSON será salvo
-            
-        Returns:
-            Caminho do arquivo JSON gerado
+        Transcreve o áudio de forma generalista (auto-idioma) e com filtros anti-alucinação.
         """
         try:
             audio_path_str = str(audio_path)
             output_path = output_dir / "lyrics.json"
-
-            logger.info(f"Iniciando transcrição de letras para {audio_path_str}")
+            logger.info(f"Iniciando transcrição generalista para {audio_path_str}")
             
-            # Executar transcrição
-            # fp16=False é essencial para CPU
-            result = self.model.transcribe(audio_path_str, verbose=False, fp16=False)
+            # Configuração generalista:
+            # - language=None permite que o Whisper detecte o idioma sozinho
+            # - No initial_prompt para evitar distrações/vieses
+            # - temperature variada para sair de loops de repetição
+            result = self.model.transcribe(
+                audio_path_str, 
+                verbose=False, 
+                fp16=False,
+                language=None, # Detecção automática de idioma (PT, EN, ES, etc.)
+                beam_size=5,
+                best_of=5,
+                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                condition_on_previous_text=False, # Essencial para evitar o "I'm going to do it" infinito
+                no_speech_threshold=0.6
+            )
             
-            # Estruturar os dados
             lyrics_data = []
+            # Lista expandida de frases típicas de alucinação do Whisper em silêncio
+            hallucination_phrases = [
+                "I'm going to do it", "Thank you for watching", "Subtitles by", 
+                "Obrigado por assistir", "Legendas por", "Please subscribe",
+                "Watching for watching", "Thanks for watching", "Subtitles powered by"
+            ]
+
             for segment in result['segments']:
-                lyrics_data.append({
-                    "start": segment['start'],
-                    "end": segment['end'],
-                    "text": segment['text'].strip(),
-                })
+                text = segment['text'].strip()
+                
+                # FILTROS DE QUALIDADE RIGOROSOS
+                # Se o Whisper está muito na dúvida se é voz (no_speech_prob > 0.4), ignoramos.
+                if segment.get('no_speech_prob', 0) > 0.4:
+                    continue
+                
+                # Se a confiança no texto é baixa (avg_logprob < -1.0), ignoramos.
+                if segment.get('avg_logprob', 0) < -1.0:
+                    continue
+
+                # Se o texto contém frases clássicas de erro da IA, ignoramos.
+                if any(h.lower() in text.lower() for h in hallucination_phrases):
+                    continue
+                
+                if len(text) > 1:
+                    lyrics_data.append({
+                        "start": segment['start'],
+                        "end": segment['end'],
+                        "text": text,
+                    })
             
-            # Salvar JSON
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(lyrics_data, f, ensure_ascii=False, indent=2)
             
-            logger.info(f"Transcrição concluída: {output_path}")
+            detected_lang = result.get('language', 'unknown')
+            logger.info(f"Transcrição finalizada. Idioma detectado: {detected_lang}")
             return str(output_path)
 
         except Exception as e:
-            logger.error(f"Erro crítico na transcrição de letras: {e}")
+            logger.error(f"Erro na transcrição: {e}")
             return None
 
-# Instância singleton
-lyric_transcriber = LyricTranscriber(model_name="base")
+# Instância singleton - 'medium' é o nível profissional para português sem exigir GPU gigante
+lyric_transcriber = LyricTranscriber(model_name="medium")
