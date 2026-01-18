@@ -125,3 +125,49 @@ async def get_project_chords(
         chords = json.load(f)
     
     return {"chords": chords, "count": len(chords)}
+
+
+@router.get("/lyrics/{project_id}")
+async def get_project_lyrics(
+    project_id: str,
+    db: Session = Depends(get_db_session)
+):
+    """
+    Retorna a letra transcrita de um projeto.
+    
+    Returns:
+        Lista de frases com {start, end, text}
+    """
+    import os
+    import json
+    from pathlib import Path
+    
+    # Buscar projeto
+    project = db.query(Project).filter(Project.id == project_id).first()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+    
+    if project.status != ProjectStatus.READY:
+        raise HTTPException(status_code=400, detail="Projeto ainda não está pronto")
+    
+    # Buscar arquivo de letras
+    storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
+    lyrics_path = storage_path / "stems" / project_id / "lyrics.json"
+    
+    if not lyrics_path.exists():
+        # Tentar em subpastas caso o Demucs tenha criado uma
+        for item in (storage_path / "stems" / project_id).iterdir():
+            if item.is_dir():
+                alt_path = item / "lyrics.json"
+                if alt_path.exists():
+                    lyrics_path = alt_path
+                    break
+    
+    if not lyrics_path.exists():
+        return {"lyrics": [], "message": "Letra não disponível para este projeto"}
+    
+    with open(lyrics_path, 'r', encoding='utf-8') as f:
+        lyrics = json.load(f)
+    
+    return {"lyrics": lyrics, "count": len(lyrics)}

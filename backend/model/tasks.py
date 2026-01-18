@@ -140,6 +140,22 @@ def process_audio(self, project_id: str, input_file_path: str) -> Dict[str, str]
             logger.warning(f"Falha na transcrição musical: {e}")
             print(f"⚠️ Transcrição não realizada: {e}")
         
+        # Transcrever letras (Lyrics)
+        self.update_state(state="PROCESSING", meta={"progress": 98, "status": "Transcrevendo letra da música..."})
+        try:
+            from .lyric_transcriber import lyric_transcriber
+            
+            # Usar o stem 'vocals' para transcrição de letras
+            vocals_input = Path(stems_dict.get("vocals", input_path))
+            
+            lyrics_path = lyric_transcriber.transcribe(vocals_input, output_dir)
+            if lyrics_path:
+                print(f"🎤 Letras transcritas: {lyrics_path}")
+                
+        except Exception as e:
+            logger.warning(f"Falha na transcrição de letras: {e}")
+            print(f"⚠️ Letras não transcritas: {e}")
+        
         # Salvar stems no banco de dados
         if project:
             import uuid

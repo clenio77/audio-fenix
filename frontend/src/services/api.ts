@@ -62,4 +62,12 @@ export const apiService = {
         const { data } = await api.get(`/chords/${projectId}`)
         return data
     },
+
+    /**
+     * Buscar letra transcrita
+     */
+    async getLyrics(projectId: string): Promise<{ lyrics: { start: number, end: number, text: string }[], count: number }> {
+        const { data } = await api.get(`/lyrics/${projectId}`)
+        return data
+    },
 }

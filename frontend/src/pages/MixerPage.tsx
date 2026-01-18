@@ -22,6 +22,7 @@ import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
 import SheetMusicViewer from '@/components/SheetMusicViewer'
 import ChordList from '@/components/ChordList'
+import SongBook from '@/components/SongBook'
 
 interface MixerPageProps {
     projectId: string
@@ -54,6 +55,26 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
     // Visualização
     const [showScore, setShowScore] = useState(false)
     const [showChords, setShowChords] = useState(false)
+    const [showSongBook, setShowSongBook] = useState(false)
+    const [lyrics, setLyrics] = useState<{ start: number, end: number, text: string }[]>([])
+
+    const fetchChords = async () => {
+        try {
+            const data = await apiService.getChords(projectId)
+            setChords(data.chords || [])
+        } catch (error) {
+            console.error('Erro ao buscar acordes:', error)
+        }
+    }
+
+    const fetchLyrics = async () => {
+        try {
+            const data = await apiService.getLyrics(projectId)
+            setLyrics(data.lyrics || [])
+        } catch (error) {
+            console.error('Erro ao buscar letras:', error)
+        }
+    }
 
     // Refs para os elementos de áudio
     const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
@@ -112,6 +133,8 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
                 if (data.status === ProjectStatus.READY) {
                     setLoading(false)
+                    fetchChords()
+                    fetchLyrics()
                 } else if (data.status === ProjectStatus.FAILED) {
                     setLoading(false)
                     alert('Erro no processamento: ' + data.error)
@@ -134,17 +157,10 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
     // Buscar acordes quando o projeto estiver pronto
     useEffect(() => {
-        const fetchChords = async () => {
-            if (!loading && project?.status === ProjectStatus.READY) {
-                try {
-                    const result = await apiService.getChords(projectId)
-                    setChords(result.chords || [])
-                } catch (error) {
-                    console.error('Erro ao buscar acordes:', error)
-                }
-            }
+        if (!loading && project?.status === ProjectStatus.READY) {
+            fetchChords()
+            fetchLyrics()
         }
-        fetchChords()
     }, [projectId, loading, project?.status])
 
     // Atualizar acorde atual baseado no tempo
@@ -357,6 +373,30 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         URL.revokeObjectURL(url);
     };
 
+    const handleDownloadSongbook = () => {
+        if (!lyrics.length) return;
+
+        let content = `SONGBOOK IA - ISOMIX STUDIO\nProjeto: ${project?.project_id}\n\n`;
+
+        lyrics.forEach(segment => {
+            const segmentChords = chords.filter(c => c.time >= segment.start && c.time < segment.end);
+            const chordsLine = segmentChords.map(c => c.chord).join('   ');
+
+            content += `${chordsLine}\n`;
+            content += `${segment.text}\n\n`;
+        });
+
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `songbook-${project?.project_id}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-900 to-black relative overflow-hidden">
             {/* Waveform Background */}
@@ -409,6 +449,22 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                                 title="Baixar Cifra (TXT)"
                             >
                                 <FileText className="w-5 h-5 text-amber-400" />
+                            </button>
+
+                            <button
+                                onClick={() => setShowSongBook(!showSongBook)}
+                                className={`flex items-center gap-2 px-4 py-3 font-semibold rounded-xl transition-all border ${showSongBook ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
+                            >
+                                <FileText className={`w-5 h-5 ${showSongBook ? 'text-white' : 'text-indigo-400'}`} />
+                                <span>{showSongBook ? 'Ocultar Songbook' : 'Songbook (Cifra + Letra)'}</span>
+                            </button>
+
+                            <button
+                                onClick={handleDownloadSongbook}
+                                className="flex items-center justify-center p-3 bg-white/5 text-gray-300 rounded-xl hover:bg-white/10 transition-all border border-white/10"
+                                title="Baixar Songbook (TXT)"
+                            >
+                                <Download className="w-5 h-5 text-indigo-400" />
                             </button>
                         </div>
                     )}
@@ -490,6 +546,17 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                         xmlUrl={apiService.getDownloadUrl(project.stems.find(s => s.type === StemType.SCORE)!.url)}
                         currentTime={currentTime}
                         isPlaying={isPlaying}
+                    />
+                </div>
+            )}
+
+            {/* SongBook (Lyrics + Chords) Section */}
+            {showSongBook && (
+                <div className="relative z-10 px-8 mb-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <SongBook
+                        lyrics={lyrics}
+                        chords={chords}
+                        currentTime={currentTime}
                     />
                 </div>
             )}

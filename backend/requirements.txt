@@ -25,6 +25,7 @@ numpy>=1.23.0,<1.24.0
 basic-pitch==0.2.4
 music21==9.1.0
 pretty_midi==0.2.10
+openai-whisper==20231117
 
 # Utilities
 python-dotenv==1.0.0
