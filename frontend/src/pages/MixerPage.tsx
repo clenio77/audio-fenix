@@ -20,6 +20,7 @@ import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
 import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
+import SheetMusicViewer from '@/components/SheetMusicViewer'
 
 interface MixerPageProps {
     projectId: string
@@ -48,6 +49,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
     // Acordes
     const [chords, setChords] = useState<ChordInfo[]>([])
     const [currentChord, setCurrentChord] = useState<string>('')
+
+    // Visualização
+    const [showScore, setShowScore] = useState(false)
 
     // Refs para os elementos de áudio
     const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
@@ -373,16 +377,26 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
                 <div className="flex items-center gap-3">
                     {project.stems?.some(s => s.type === StemType.SCORE) && (
-                        <button
-                            onClick={() => {
-                                const score = project.stems?.find(s => s.type === StemType.SCORE);
-                                if (score) window.open(apiService.getDownloadUrl(score.url), '_blank');
-                            }}
-                            className="flex items-center gap-2 px-4 py-3 bg-white/5 text-gray-300 font-semibold rounded-xl hover:bg-white/10 transition-all border border-white/10"
-                        >
-                            <Download className="w-5 h-5 text-purple-400" />
-                            <span>Baixar Partitura</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowScore(!showScore)}
+                                className={`flex items-center gap-2 px-4 py-3 font-semibold rounded-xl transition-all border ${showScore ? 'bg-purple-600 text-white border-purple-400 shadow-lg shadow-purple-500/20' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
+                            >
+                                <Zap className={`w-5 h-5 ${showScore ? 'text-white' : 'text-purple-400'}`} />
+                                <span>{showScore ? 'Ocultar Partitura' : 'Ver Partitura'}</span>
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    const score = project.stems?.find(s => s.type === StemType.SCORE);
+                                    if (score) window.open(apiService.getDownloadUrl(score.url), '_blank');
+                                }}
+                                className="flex items-center justify-center p-3 bg-white/5 text-gray-300 rounded-xl hover:bg-white/10 transition-all border border-white/10"
+                                title="Baixar MusicXML"
+                            >
+                                <Download className="w-5 h-5 text-purple-400" />
+                            </button>
+                        </div>
                     )}
 
                     {project.stems?.some(s => s.type === StemType.MIDI) && (
@@ -421,6 +435,17 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                             <Guitar className="w-8 h-8 text-amber-400" />
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Sheet Music Viewer Section */}
+            {showScore && project.stems?.some(s => s.type === StemType.SCORE) && (
+                <div className="relative z-10 px-8 mb-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <SheetMusicViewer
+                        xmlUrl={apiService.getDownloadUrl(project.stems.find(s => s.type === StemType.SCORE)!.url)}
+                        currentTime={currentTime}
+                        isPlaying={isPlaying}
+                    />
                 </div>
             )}
 

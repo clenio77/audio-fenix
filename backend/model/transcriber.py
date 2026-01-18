@@ -17,9 +17,25 @@ logger = logging.getLogger(__name__)
 class MusicTranscriber:
     def __init__(self):
         self.model_path = ICASSP_2022_MODEL_PATH
-        # Configurar music21 para não tentar abrir visualizadores externos
-        music21.environment.set('graphicsMagickPath', '')
-        music21.environment.set('musescoreDirectPNGPath', '')
+        # Configurar music21 de forma robusta para ambiente headless
+        try:
+            from music21 import environment
+            us = environment.UserSettings()
+            # Tentar silenciar avisos de ferramentas externas ausentes
+            try:
+                us['graphicsMagickPath'] = ''
+            except:
+                pass
+            try:
+                us['musescoreDirectPNGPath'] = ''
+            except:
+                pass
+            try:
+                us['lilypondPath'] = ''
+            except:
+                pass
+        except Exception as e:
+            logger.warning(f"Aviso ao configurar ambiente music21: {e}")
 
     def transcribe(self, audio_path: Path, output_dir: Path) -> Tuple[Optional[str], Optional[str]]:
         """
