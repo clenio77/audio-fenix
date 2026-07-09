@@ -111,12 +111,14 @@ async def get_project_chords(
     
     if not chords_path.exists():
         # Se não encontrar direto, buscar em subpastas
-        for subdir in (storage_path / "stems" / project_id).iterdir():
-            if subdir.is_dir():
-                alt_path = subdir / "chords.json"
-                if alt_path.exists():
-                    chords_path = alt_path
-                    break
+        stems_dir = storage_path / "stems" / project_id
+        if stems_dir.is_dir():
+            for subdir in stems_dir.iterdir():
+                if subdir.is_dir():
+                    alt_path = subdir / "chords.json"
+                    if alt_path.exists():
+                        chords_path = alt_path
+                        break
     
     if not chords_path.exists():
         return {"chords": [], "message": "Acordes não disponíveis para este projeto"}
@@ -157,12 +159,14 @@ async def get_project_lyrics(
     
     if not lyrics_path.exists():
         # Tentar em subpastas caso o Demucs tenha criado uma
-        for item in (storage_path / "stems" / project_id).iterdir():
-            if item.is_dir():
-                alt_path = item / "lyrics.json"
-                if alt_path.exists():
-                    lyrics_path = alt_path
-                    break
+        stems_dir = storage_path / "stems" / project_id
+        if stems_dir.is_dir():
+            for item in stems_dir.iterdir():
+                if item.is_dir():
+                    alt_path = item / "lyrics.json"
+                    if alt_path.exists():
+                        lyrics_path = alt_path
+                        break
     
     if not lyrics_path.exists():
         return {"lyrics": [], "message": "Letra não disponível para este projeto"}
