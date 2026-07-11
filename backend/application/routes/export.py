@@ -17,6 +17,9 @@ from application.schemas.project import ExportRequest, ExportResponse
 
 router = APIRouter()
 
+# Only wav stems belong in ffmpeg mix export; midi/score are download-only artifacts.
+EXPORTABLE_AUDIO_STEMS = frozenset({"vocals", "drums", "bass", "other", "click"})
+
 
 @router.post("/export", response_model=ExportResponse)
 async def export_mix(
@@ -37,11 +40,14 @@ async def export_mix(
     if project.status != ProjectStatus.READY:
         raise HTTPException(status_code=400, detail="Projeto ainda não está pronto")
     
-    # Buscar stems
-    stems = db.query(Stem).filter(Stem.project_id == request.project_id).all()
+    # Buscar apenas stems de áudio; midi/score não são decodificáveis pelo ffmpeg.
+    stems = db.query(Stem).filter(
+        Stem.project_id == request.project_id,
+        Stem.stem_type.in_(EXPORTABLE_AUDIO_STEMS),
+    ).all()
     
     if not stems:
-        raise HTTPException(status_code=404, detail="Stems não encontrados")
+        raise HTTPException(status_code=404, detail="Stems de áudio não encontrados")
     
     # Preparar comando ffmpeg
     storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))

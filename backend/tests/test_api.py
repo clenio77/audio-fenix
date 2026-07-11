@@ -174,6 +174,117 @@ class TestExportEndpoint:
         
         assert response.status_code == 404
 
+    @patch("application.routes.export.subprocess.run")
+    def test_export_ignores_non_audio_stems(
+        self,
+        mock_subprocess,
+        client: TestClient,
+        db_session,
+        temp_dir,
+        sample_audio_bytes,
+    ):
+        """Export deve ignorar stems midi/score e usar apenas áudio no ffmpeg."""
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+
+        mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
+
+        project_id = "11111111-1111-1111-1111-111111111111"
+        stems_dir = temp_dir / "stems" / project_id
+        stems_dir.mkdir(parents=True)
+
+        audio_paths = {}
+        for stem_type in ("vocals", "drums", "bass", "other"):
+            path = stems_dir / f"{stem_type}.wav"
+            path.write_bytes(sample_audio_bytes)
+            audio_paths[stem_type] = str(path)
+
+        midi_path = stems_dir / "transcription.mid"
+        midi_path.write_text("MThd", encoding="utf-8")
+        score_path = stems_dir / "score.musicxml"
+        score_path.write_text("<score-partwise/>", encoding="utf-8")
+
+        project = Project(
+            id=project_id,
+            original_filename="test.wav",
+            original_file_path=str(stems_dir / "original.wav"),
+            file_size_mb=1,
+            status=ProjectStatus.READY,
+        )
+        db_session.add(project)
+
+        for stem_type, file_path in {
+            **audio_paths,
+            "midi": str(midi_path),
+            "score": str(score_path),
+        }.items():
+            db_session.add(
+                Stem(
+                    id=f"{project_id}-{stem_type}",
+                    project_id=project_id,
+                    stem_type=stem_type,
+                    file_path=file_path,
+                    file_size_mb=1,
+                )
+            )
+        db_session.commit()
+
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": project_id,
+                "volumes": {
+                    "vocals": 1.0,
+                    "drums": 1.0,
+                    "bass": 1.0,
+                    "other": 1.0,
+                    "midi": 0.0,
+                    "score": 0.0,
+                },
+                "mutes": {},
+                "format": "mp3",
+            },
+        )
+
+        assert response.status_code == 200
+        mock_subprocess.assert_called_once()
+        cmd = mock_subprocess.call_args[0][0]
+        input_files = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-i"]
+        assert len(input_files) == 4
+        assert all(path.endswith(".wav") for path in input_files)
+        assert str(midi_path) not in input_files
+        assert str(score_path) not in input_files
+
+
+class TestLyricsEndpoint:
+    """Testes para o endpoint /api/lyrics/{project_id}."""
+
+    def test_lyrics_missing_stems_dir_returns_empty(
+        self,
+        client: TestClient,
+        db_session,
+    ):
+        """Letra indisponível sem diretório de stems não deve causar erro 500."""
+        from domain.models.project import Project, ProjectStatus
+
+        project_id = "22222222-2222-2222-2222-222222222222"
+        project = Project(
+            id=project_id,
+            original_filename="test.wav",
+            original_file_path="/tmp/test.wav",
+            file_size_mb=1,
+            status=ProjectStatus.READY,
+        )
+        db_session.add(project)
+        db_session.commit()
+
+        response = client.get(f"/api/lyrics/{project_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["lyrics"] == []
+        assert "message" in data
+
 
 class TestCORS:
     """Testes para configuração de CORS."""
