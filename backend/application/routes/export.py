@@ -121,15 +121,24 @@ async def download_export(project_id: str, filename: str):
     from fastapi.responses import FileResponse
     
     storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
-    file_path = storage_path / "exports" / project_id / filename
-    
-    if not file_path.exists():
+    exports_root = (storage_path / "exports").resolve()
+    safe_filename = Path(filename).name
+    if not safe_filename or safe_filename in {".", ".."}:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    # Contain under exports/ — absolute or ".." project_id/filename must not escape.
+    project_exports = (exports_root / project_id).resolve()
+    if not project_exports.is_relative_to(exports_root):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    file_path = (project_exports / safe_filename).resolve()
+    if not file_path.is_relative_to(project_exports) or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
     
     return FileResponse(
         path=file_path,
-        filename=filename,
-        media_type="audio/mpeg" if filename.endswith(".mp3") else "audio/wav"
+        filename=safe_filename,
+        media_type="audio/mpeg" if safe_filename.endswith(".mp3") else "audio/wav"
     )
 
 

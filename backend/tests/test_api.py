@@ -131,6 +131,99 @@ class TestUploadEndpoint:
         # Mensagem deve indicar limite de tamanho
         assert "20MB" in data["detail"] or "grande" in data["detail"].lower()
 
+    @patch('model.tasks.process_audio.delay')
+    @patch('domain.validators.audio.AudioValidator.validate_format')
+    @patch('domain.validators.audio.AudioValidator.get_audio_metadata')
+    def test_upload_rejects_absolute_filename_escape(
+        self,
+        mock_metadata,
+        mock_validate,
+        mock_celery,
+        client: TestClient,
+        sample_audio_bytes,
+        temp_dir,
+    ):
+        """Filename absoluto não deve escrever fora de STORAGE_PATH/uploads."""
+        import os
+        from pathlib import Path
+
+        mock_validate.return_value = (True, None)
+        mock_metadata.return_value = {
+            "duration_seconds": 180,
+            "sample_rate": 44100,
+            "channels": 2,
+        }
+        mock_celery.return_value = MagicMock(id="mock-task-id")
+
+        escape_target = temp_dir / "should_not_be_written.wav"
+        assert not escape_target.exists()
+
+        response = client.post(
+            "/api/upload",
+            files={
+                "file": (
+                    str(escape_target.resolve()),
+                    sample_audio_bytes,
+                    "audio/wav",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        assert not escape_target.exists()
+
+        storage_path = Path(os.environ["STORAGE_PATH"]).resolve()
+        uploads = storage_path / "uploads"
+        project_id = response.json()["project_id"]
+        saved = list((uploads / project_id).glob("*.wav"))
+        assert len(saved) == 1
+        assert saved[0].is_relative_to(uploads)
+
+    @patch('model.tasks.process_audio.delay')
+    @patch('domain.validators.audio.AudioValidator.validate_format')
+    @patch('domain.validators.audio.AudioValidator.get_audio_metadata')
+    def test_upload_rejects_traversal_filename(
+        self,
+        mock_metadata,
+        mock_validate,
+        mock_celery,
+        client: TestClient,
+        sample_audio_bytes,
+    ):
+        """Filename com .. não deve escapar do diretório do projeto."""
+        import os
+        from pathlib import Path
+
+        mock_validate.return_value = (True, None)
+        mock_metadata.return_value = {
+            "duration_seconds": 60,
+            "sample_rate": 44100,
+            "channels": 2,
+        }
+        mock_celery.return_value = MagicMock(id="mock-task-id")
+
+        response = client.post(
+            "/api/upload",
+            files={
+                "file": (
+                    "../../../escaped.wav",
+                    sample_audio_bytes,
+                    "audio/wav",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        storage_path = Path(os.environ["STORAGE_PATH"]).resolve()
+        uploads = storage_path / "uploads"
+        project_id = response.json()["project_id"]
+        saved = list((uploads / project_id).rglob("*"))
+        files = [p for p in saved if p.is_file()]
+        assert len(files) == 1
+        assert files[0].name == "escaped.wav"
+        assert files[0].is_relative_to(uploads / project_id)
+        assert not (storage_path / "escaped.wav").exists()
+
 
 class TestStatusEndpoint:
     """Testes para o endpoint /api/status/{project_id}."""
@@ -173,6 +266,24 @@ class TestExportEndpoint:
         )
         
         assert response.status_code == 404
+
+    def test_download_export_blocks_path_traversal(self, client: TestClient, temp_dir):
+        """project_id/filename absolutos ou com .. não devem ler fora de exports/."""
+        import os
+        from pathlib import Path
+
+        storage_path = Path(os.environ["STORAGE_PATH"]).resolve()
+        secret = storage_path.parent / "secret.txt"
+        secret.write_text("top-secret", encoding="utf-8")
+
+        # Absolute project_id would previously resolve to an arbitrary path via Path joining.
+        response = client.get(f"/api/download/export/{secret.parent}/secret.txt")
+        assert response.status_code == 404
+        assert response.content != b"top-secret"
+
+        response_dotdot = client.get("/api/download/export/foo/../../secret.txt")
+        assert response_dotdot.status_code == 404
+        assert response_dotdot.content != b"top-secret"
 
 
 class TestCORS:
