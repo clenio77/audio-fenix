@@ -40,12 +40,20 @@ async def upload_audio(
         
         # Salvar arquivo temporariamente para validação
         storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
-        uploads_dir = storage_path / "uploads"
+        uploads_dir = (storage_path / "uploads").resolve()
         uploads_dir.mkdir(parents=True, exist_ok=True)
         
         project_id = str(uuid.uuid4())
-        temp_file_path = uploads_dir / project_id / file.filename
-        temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # Basename only — absolute/traversal filenames must not escape the project dir.
+        safe_filename = Path(file.filename or "audio").name
+        if not safe_filename or safe_filename in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
+
+        project_dir = (uploads_dir / project_id).resolve()
+        project_dir.mkdir(parents=True, exist_ok=True)
+        temp_file_path = (project_dir / safe_filename).resolve()
+        if not temp_file_path.is_relative_to(project_dir):
+            raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
         
         # Salvar arquivo
         with open(temp_file_path, "wb") as f:
@@ -83,7 +91,7 @@ async def upload_audio(
         
         project = Project(
             id=project_id,
-            original_filename=file.filename,
+            original_filename=safe_filename,
             original_file_path=str(temp_file_path),
             file_size_mb=int(file_size_mb),
             duration_seconds=int(duration_seconds),
