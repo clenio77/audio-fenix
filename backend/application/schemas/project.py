@@ -4,7 +4,7 @@ Pydantic Schemas - Application Layer
 Modelos de request/response para a API.
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Literal
 from datetime import datetime
 from enum import Enum
 
@@ -81,7 +81,9 @@ class ExportRequest(BaseModel):
         description="Stems mutados",
         example={"vocals": False, "drums": True, "bass": False, "other": False}
     )
-    format: str = Field("mp3", description="Formato de saída (mp3 ou wav)")
+    # Allowlist only — unsanitized format was joined into the export path and
+    # enabled arbitrary file write via values like "wav/../../../../tmp/evil".
+    format: Literal["mp3", "wav"] = Field("mp3", description="Formato de saída (mp3 ou wav)")
 
 
 class ExportResponse(BaseModel):

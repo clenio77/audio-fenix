@@ -168,11 +168,137 @@ class TestExportEndpoint:
             "/api/export",
             json={
                 "project_id": fake_id,
-                "volumes": {"vocals": 1.0, "drums": 0.8}
+                "volumes": {"vocals": 1.0, "drums": 0.8},
+                "mutes": {"vocals": False, "drums": False},
             }
         )
         
         assert response.status_code == 404
+
+    def test_export_rejects_path_traversal_format(self, client: TestClient, db_session):
+        """format com path traversal não deve escapar do diretório de exports."""
+        from datetime import datetime, timedelta
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+        import uuid
+        import os
+        from pathlib import Path
+
+        project_id = str(uuid.uuid4())
+        project = Project(
+            id=project_id,
+            original_filename="song.wav",
+            original_file_path="/tmp/song.wav",
+            file_size_mb=1,
+            status=ProjectStatus.READY,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db_session.add(project)
+        db_session.add(Stem(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            stem_type="vocals",
+            file_path="/tmp/vocals.wav",
+            file_size_mb=1,
+        ))
+        db_session.commit()
+
+        storage = Path(os.environ["STORAGE_PATH"])
+        outside_target = storage.parent / f"pwned-export-{project_id}"
+        # Relative escape from exports/<id>/mix_<id>.<format>
+        malicious_format = f"wav/../../../../{outside_target.name}"
+
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": project_id,
+                "volumes": {"vocals": 1.0},
+                "mutes": {"vocals": False},
+                "format": malicious_format,
+            },
+        )
+
+        # Schema allowlist must reject before ffmpeg runs
+        assert response.status_code == 422
+        assert not outside_target.exists()
+
+    def test_export_rejects_unknown_format(self, client: TestClient):
+        """Apenas mp3 e wav são formatos válidos."""
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": "00000000-0000-0000-0000-000000000000",
+                "volumes": {"vocals": 1.0},
+                "mutes": {"vocals": False},
+                "format": "flac",
+            },
+        )
+        assert response.status_code == 422
+
+    @patch("application.routes.export.subprocess.run")
+    def test_export_writes_only_under_exports(
+        self,
+        mock_run,
+        client: TestClient,
+        db_session,
+        sample_audio_bytes,
+    ):
+        """Export legítimo deve gravar apenas em STORAGE_PATH/exports/<project_id>/."""
+        from datetime import datetime, timedelta
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+        import uuid
+        import os
+        from pathlib import Path
+
+        project_id = str(uuid.uuid4())
+        storage = Path(os.environ["STORAGE_PATH"])
+        stem_path = storage / "stems" / project_id / "vocals.wav"
+        stem_path.parent.mkdir(parents=True, exist_ok=True)
+        stem_path.write_bytes(sample_audio_bytes)
+
+        project = Project(
+            id=project_id,
+            original_filename="song.wav",
+            original_file_path=str(storage / "uploads" / "song.wav"),
+            file_size_mb=1,
+            status=ProjectStatus.READY,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db_session.add(project)
+        db_session.add(Stem(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            stem_type="vocals",
+            file_path=str(stem_path),
+            file_size_mb=1,
+        ))
+        db_session.commit()
+
+        def fake_ffmpeg(cmd, **kwargs):
+            out = Path(cmd[-1])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"fake-mp3")
+            return MagicMock(returncode=0, stderr="")
+
+        mock_run.side_effect = fake_ffmpeg
+
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": project_id,
+                "volumes": {"vocals": 1.0},
+                "mutes": {"vocals": False},
+                "format": "mp3",
+            },
+        )
+
+        assert response.status_code == 200
+        expected = (storage / "exports" / project_id / f"mix_{project_id}.mp3").resolve()
+        assert expected.is_file()
+        assert expected.is_relative_to((storage / "exports").resolve())
+        assert mock_run.called
+        assert Path(mock_run.call_args[0][0][-1]).resolve() == expected
 
 
 class TestCORS:

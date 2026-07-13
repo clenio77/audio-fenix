@@ -17,6 +17,8 @@ from application.schemas.project import ExportRequest, ExportResponse
 
 router = APIRouter()
 
+ALLOWED_EXPORT_FORMATS = frozenset({"mp3", "wav"})
+
 
 @router.post("/export", response_model=ExportResponse)
 async def export_mix(
@@ -36,6 +38,9 @@ async def export_mix(
     
     if project.status != ProjectStatus.READY:
         raise HTTPException(status_code=400, detail="Projeto ainda não está pronto")
+
+    if request.format not in ALLOWED_EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail="Formato de exportação inválido")
     
     # Buscar stems
     stems = db.query(Stem).filter(Stem.project_id == request.project_id).all()
@@ -43,13 +48,18 @@ async def export_mix(
     if not stems:
         raise HTTPException(status_code=404, detail="Stems não encontrados")
     
-    # Preparar comando ffmpeg
+    # Preparar comando ffmpeg — contain output under exports/<project_id>/
     storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
-    exports_dir = storage_path / "exports" / request.project_id
+    exports_root = (storage_path / "exports").resolve()
+    exports_dir = (exports_root / request.project_id).resolve()
+    if not exports_dir.is_relative_to(exports_root):
+        raise HTTPException(status_code=400, detail="project_id inválido")
     exports_dir.mkdir(parents=True, exist_ok=True)
     
-    output_filename = f"mix_{request.project_id}.{request.format}"
-    output_path = exports_dir / output_filename
+    output_filename = f"mix_{Path(request.project_id).name}.{request.format}"
+    output_path = (exports_dir / output_filename).resolve()
+    if not output_path.is_relative_to(exports_dir):
+        raise HTTPException(status_code=400, detail="Caminho de exportação inválido")
     
     # Construir filtro de áudio do ffmpeg
     # Exemplo: -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.5[a1];[a0][a1]amix=inputs=2"
