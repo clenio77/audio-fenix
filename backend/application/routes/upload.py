@@ -12,10 +12,12 @@ from datetime import datetime, timedelta
 
 from domain.database import get_db_session
 from domain.models.project import Project, ProjectStatus
+from domain.models.user import User
 from domain.validators.audio import AudioValidator
 from business.usage_limiter import UsageLimiter, SubscriptionPlan
 from model.tasks import process_audio
 from application.schemas.project import UploadResponse
+from application.routes.auth import require_user
 
 router = APIRouter()
 
@@ -23,19 +25,20 @@ router = APIRouter()
 @router.post("/upload", response_model=UploadResponse)
 async def upload_audio(
     file: UploadFile = File(...),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db_session)
 ):
     """
     Upload de arquivo de áudio para processamento.
     
+    - Requer autenticação (associa o projeto ao usuário)
     - Valida formato e tamanho
     - Salva arquivo temporário
     - Cria projeto no banco
     - Enfileira tarefa de processamento
     """
     try:
-        # TODO: Obter plano do usuário (por enquanto, usar Free)
-        user_plan = SubscriptionPlan.FREE
+        user_plan = SubscriptionPlan.PRO if user.is_pro else SubscriptionPlan.FREE
         limiter = UsageLimiter(user_plan)
         
         # Salvar arquivo temporariamente para validação
@@ -77,12 +80,13 @@ async def upload_audio(
         # uploads_today = db.query(Project).filter(...).count()
         # has_quota, error_msg = limiter.check_daily_quota(uploads_today)
         
-        # Criar projeto no banco
+        # Criar projeto no banco, vinculado ao usuário autenticado
         retention_hours = limiter.get_retention_hours()
         expires_at = datetime.utcnow() + timedelta(hours=retention_hours)
         
         project = Project(
             id=project_id,
+            user_id=user.id,
             original_filename=file.filename,
             original_file_path=str(temp_file_path),
             file_size_mb=int(file_size_mb),

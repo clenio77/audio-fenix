@@ -5,6 +5,7 @@
  */
 import axios from 'axios'
 import type { UploadResponse, Project, ExportRequest, ExportResponse, ChordInfo } from '@/types'
+import { useAuthStore } from '@/store/authStore'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -13,6 +14,15 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+})
+
+// Attach JWT so uploads (and other API calls) are owned by the logged-in user
+api.interceptors.request.use((config) => {
+    const token = useAuthStore.getState().accessToken
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
 })
 
 export const apiService = {

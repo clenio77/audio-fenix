@@ -149,3 +149,31 @@ def client(db_session):
             yield test_client
         
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_user(db_session):
+    """Cria um usuário autenticável e retorna (user, access_token)."""
+    from domain.models.user import User, UserPlan
+    from domain.services.auth_service import AuthService
+
+    user = User(
+        email="test@example.com",
+        hashed_password=AuthService.hash_password("password123"),
+        name="Test User",
+        plan=UserPlan.FREE.value,
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    token = AuthService.create_access_token(user.id, user.email, user.plan)
+    return user, token
+
+
+@pytest.fixture
+def auth_headers(auth_user):
+    """Headers Authorization Bearer para o usuário de teste."""
+    _, token = auth_user
+    return {"Authorization": f"Bearer {token}"}
