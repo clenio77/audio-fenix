@@ -33,16 +33,25 @@ class TestHealthEndpoints:
 class TestUploadEndpoint:
     """Testes para o endpoint /api/upload."""
     
-    def test_upload_without_file(self, client: TestClient):
+    def test_upload_requires_auth(self, client: TestClient, sample_audio_bytes):
+        """Upload sem token deve retornar 401."""
+        response = client.post(
+            "/api/upload",
+            files={"file": ("test.wav", sample_audio_bytes, "audio/wav")}
+        )
+        assert response.status_code == 401
+
+    def test_upload_without_file(self, client: TestClient, auth_headers):
         """Upload sem arquivo deve retornar erro 422."""
-        response = client.post("/api/upload")
+        response = client.post("/api/upload", headers=auth_headers)
         
         assert response.status_code == 422  # Unprocessable Entity
     
-    def test_upload_empty_file(self, client: TestClient):
+    def test_upload_empty_file(self, client: TestClient, auth_headers):
         """Upload de arquivo vazio deve ser rejeitado."""
         response = client.post(
             "/api/upload",
+            headers=auth_headers,
             files={"file": ("empty.mp3", b"", "audio/mpeg")}
         )
         
@@ -58,7 +67,8 @@ class TestUploadEndpoint:
         mock_validate,
         mock_celery,
         client: TestClient,
-        sample_audio_bytes
+        sample_audio_bytes,
+        auth_headers,
     ):
         """Upload de arquivo válido deve retornar 200 e project_id."""
         # Configurar mocks
@@ -72,6 +82,7 @@ class TestUploadEndpoint:
         
         response = client.post(
             "/api/upload",
+            headers=auth_headers,
             files={"file": ("test.wav", sample_audio_bytes, "audio/wav")}
         )
         
@@ -80,18 +91,66 @@ class TestUploadEndpoint:
         assert "project_id" in data
         assert data["status"] == "pending"
         assert "message" in data
+
+    @patch('model.tasks.process_audio.delay')
+    @patch('domain.validators.audio.AudioValidator.validate_format')
+    @patch('domain.validators.audio.AudioValidator.get_audio_metadata')
+    def test_upload_associates_project_with_user(
+        self,
+        mock_metadata,
+        mock_validate,
+        mock_celery,
+        client: TestClient,
+        sample_audio_bytes,
+        auth_user,
+        auth_headers,
+        db_session,
+    ):
+        """
+        Upload autenticado deve gravar user_id no projeto para que
+        GET /api/projects liste o trabalho do usuário (Meus Projetos).
+        """
+        from domain.models.project import Project
+
+        mock_validate.return_value = (True, None)
+        mock_metadata.return_value = {
+            "duration_seconds": 120,
+            "sample_rate": 44100,
+            "channels": 2,
+        }
+        mock_celery.return_value = MagicMock(id="mock-task-id")
+
+        user, _ = auth_user
+        response = client.post(
+            "/api/upload",
+            headers=auth_headers,
+            files={"file": ("owned.wav", sample_audio_bytes, "audio/wav")},
+        )
+        assert response.status_code == 200
+        project_id = response.json()["project_id"]
+
+        project = db_session.query(Project).filter(Project.id == project_id).first()
+        assert project is not None
+        assert project.user_id == user.id
+
+        list_response = client.get("/api/projects", headers=auth_headers)
+        assert list_response.status_code == 200
+        listed_ids = [p["id"] for p in list_response.json()["projects"]]
+        assert project_id in listed_ids
     
     @patch('domain.validators.audio.AudioValidator.validate_format')
     def test_upload_invalid_format(
         self,
         mock_validate,
-        client: TestClient
+        client: TestClient,
+        auth_headers,
     ):
         """Upload de formato inválido deve retornar erro 400."""
         mock_validate.return_value = (False, "Formato não suportado")
         
         response = client.post(
             "/api/upload",
+            headers=auth_headers,
             files={"file": ("test.txt", b"not audio content", "text/plain")}
         )
         
@@ -107,7 +166,8 @@ class TestUploadEndpoint:
         mock_metadata,
         mock_validate,
         mock_celery,
-        client: TestClient
+        client: TestClient,
+        auth_headers,
     ):
         """Upload de arquivo muito grande deve retornar erro 400."""
         mock_validate.return_value = (True, None)
@@ -122,6 +182,7 @@ class TestUploadEndpoint:
         
         response = client.post(
             "/api/upload",
+            headers=auth_headers,
             files={"file": ("large.mp3", large_content, "audio/mpeg")}
         )
         
