@@ -23,6 +23,11 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 class AuthService:
     """Serviço de autenticação e autorização."""
+
+    @staticmethod
+    def normalize_email(email: str) -> str:
+        """Normaliza email para comparação e armazenamento (lowercase + trim)."""
+        return (email or "").lower().strip()
     
     @staticmethod
     def hash_password(password: str) -> str:
@@ -134,7 +139,8 @@ class AuthService:
         Returns:
             User se autenticado, None caso contrário
         """
-        user = db.query(User).filter(User.email == email).first()
+        normalized_email = AuthService.normalize_email(email)
+        user = db.query(User).filter(User.email == normalized_email).first()
         
         if not user:
             return None
@@ -170,14 +176,16 @@ class AuthService:
         Returns:
             Tupla (User, None) se sucesso, (None, error_message) se erro
         """
-        # Verificar se email já existe
-        existing = db.query(User).filter(User.email == email).first()
+        normalized_email = AuthService.normalize_email(email)
+
+        # Validar email (após normalização)
+        if not normalized_email or "@" not in normalized_email:
+            return None, "Email inválido"
+
+        # Verificar se email já existe (case-insensitive)
+        existing = db.query(User).filter(User.email == normalized_email).first()
         if existing:
             return None, "Email já cadastrado"
-        
-        # Validar email
-        if not email or "@" not in email:
-            return None, "Email inválido"
         
         # Validar senha
         if len(password) < 6:
@@ -185,7 +193,7 @@ class AuthService:
         
         # Criar usuário
         user = User(
-            email=email.lower().strip(),
+            email=normalized_email,
             hashed_password=AuthService.hash_password(password),
             name=name,
             plan=UserPlan.FREE.value,
