@@ -186,6 +186,23 @@ class TestUserRegistration:
         assert user is not None
         assert user.email == "test@example.com"
 
+    def test_register_duplicate_email_different_case(self, db_session):
+        """Email duplicado com casing diferente não deve causar 500."""
+        AuthService.register_user(
+            db=db_session,
+            email="duplicate@example.com",
+            password="senha123"
+        )
+
+        user, error = AuthService.register_user(
+            db=db_session,
+            email="Duplicate@Example.com",
+            password="outrasenha"
+        )
+
+        assert user is None
+        assert error == "Email já cadastrado"
+
 
 class TestUserAuthentication:
     """Testes para autenticação de usuário."""
@@ -208,6 +225,30 @@ class TestUserAuthentication:
         
         assert user is not None
         assert user.email == "auth@example.com"
+
+    def test_authenticate_user_email_case_insensitive(self, db_session):
+        """Login deve funcionar independentemente do casing do email."""
+        AuthService.register_user(
+            db=db_session,
+            email="CaseUser@Example.com",
+            password="senha123"
+        )
+
+        user = AuthService.authenticate_user(
+            db=db_session,
+            email="caseuser@example.com",
+            password="senha123"
+        )
+
+        assert user is not None
+        assert user.email == "caseuser@example.com"
+
+        user_mixed = AuthService.authenticate_user(
+            db=db_session,
+            email="  CaseUser@EXAMPLE.com  ",
+            password="senha123"
+        )
+        assert user_mixed is not None
     
     def test_authenticate_user_wrong_password(self, db_session):
         """Deve rejeitar senha incorreta."""
