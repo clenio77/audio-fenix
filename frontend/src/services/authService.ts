@@ -15,6 +15,25 @@ const authApi = axios.create({
     },
 })
 
+/**
+ * Client sem interceptors — usado só para /refresh.
+ * Evita loop infinito quando o refresh retorna 401 e o interceptor
+ * tentaria refresh de novo sobre a própria chamada de refresh.
+ */
+const refreshClient = axios.create({
+    baseURL: `${API_URL}/api/auth`,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+})
+
+/** Endpoints que não devem disparar tentativa de refresh em 401. */
+export function isTokenRefreshEligible(url: string | undefined): boolean {
+    if (!url) return false
+    const skip = ['/refresh', '/login', '/register']
+    return !skip.some((path) => url.includes(path))
+}
+
 // Interceptor para adicionar token de autenticação
 authApi.interceptors.request.use((config) => {
     const token = useAuthStore.getState().accessToken
@@ -30,13 +49,18 @@ authApi.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (
+            error.response?.status === 401 &&
+            originalRequest &&
+            !originalRequest._retry &&
+            isTokenRefreshEligible(originalRequest.url)
+        ) {
             originalRequest._retry = true
 
             const refreshToken = useAuthStore.getState().refreshToken
             if (refreshToken) {
                 try {
-                    const response = await authApi.post('/refresh', {
+                    const response = await refreshClient.post('/refresh', {
                         refresh_token: refreshToken,
                     })
 
@@ -50,6 +74,8 @@ authApi.interceptors.response.use(
                     return Promise.reject(refreshError)
                 }
             }
+
+            useAuthStore.getState().logout()
         }
 
         return Promise.reject(error)
@@ -118,7 +144,7 @@ export const authService = {
             throw new Error('No refresh token available')
         }
 
-        const response = await authApi.post<AuthResponse>('/refresh', {
+        const response = await refreshClient.post<AuthResponse>('/refresh', {
             refresh_token: refreshToken,
         })
 
