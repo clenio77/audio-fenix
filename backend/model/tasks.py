@@ -45,6 +45,7 @@ def process_audio(self, project_id: str, input_file_path: str) -> Dict[str, str]
     engine = create_engine(database_url)
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
+    project = None
     
     try:
         logger.info(f"[Task {self.request.id}] Iniciando processamento do projeto {project_id}")
@@ -192,13 +193,27 @@ def process_audio(self, project_id: str, input_file_path: str) -> Dict[str, str]
         logger.exception(f"[Task {self.request.id}] Erro no processamento")
         print(f"❌ Erro: {str(e)}")
         
-        # Atualizar status para FAILED
-        if project:
-            project.status = ProjectStatus.FAILED
-            project.error_message = str(e)
-            db.commit()
+        # Never overwrite a successful READY commit (e.g. Redis blip on final
+        # update_state). Rollback pending work, then mark FAILED only if still
+        # not ready — otherwise stems stay reachable via the status API.
+        try:
+            db.rollback()
+            project_row = db.query(Project).filter(Project.id == project_id).first()
+            if project_row and project_row.status != ProjectStatus.READY:
+                project_row.status = ProjectStatus.FAILED
+                project_row.error_message = str(e)[:2000]
+                db.commit()
+        except Exception:
+            logger.exception(
+                f"[Task {self.request.id}] Falha ao persistir status FAILED"
+            )
         
-        self.update_state(state="FAILURE", meta={"error": str(e)})
+        try:
+            self.update_state(state="FAILURE", meta={"error": str(e)})
+        except Exception:
+            logger.warning(
+                f"[Task {self.request.id}] Falha ao atualizar estado Celery FAILURE"
+            )
         raise
     finally:
         db.close()
