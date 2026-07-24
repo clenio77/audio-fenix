@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
+import { buildExportMutes } from '@/utils/exportMutes'
 import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
@@ -311,10 +312,12 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 return acc
             }, {} as Record<StemType, number>)
 
+            // Solo is applied in the player via effective mute; export must use the
+            // same map or the downloaded mix includes stems the user silenced with S.
             const response = await apiService.exportMix({
                 project_id: projectId,
                 volumes: normalizedVolumes,
-                mutes,
+                mutes: buildExportMutes(mutes, solos),
                 format: 'mp3',
             })
 
