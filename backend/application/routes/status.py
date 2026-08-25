@@ -107,11 +107,12 @@ async def get_project_chords(
     
     # Buscar arquivo de acordes
     storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
-    chords_path = storage_path / "stems" / project_id / "chords.json"
+    project_stems_dir = storage_path / "stems" / project_id
+    chords_path = project_stems_dir / "chords.json"
     
-    if not chords_path.exists():
+    if not chords_path.exists() and project_stems_dir.is_dir():
         # Se não encontrar direto, buscar em subpastas
-        for subdir in (storage_path / "stems" / project_id).iterdir():
+        for subdir in project_stems_dir.iterdir():
             if subdir.is_dir():
                 alt_path = subdir / "chords.json"
                 if alt_path.exists():
@@ -153,11 +154,12 @@ async def get_project_lyrics(
     
     # Buscar arquivo de letras
     storage_path = Path(os.getenv("STORAGE_PATH", "./storage"))
-    lyrics_path = storage_path / "stems" / project_id / "lyrics.json"
+    project_stems_dir = storage_path / "stems" / project_id
+    lyrics_path = project_stems_dir / "lyrics.json"
     
-    if not lyrics_path.exists():
+    if not lyrics_path.exists() and project_stems_dir.is_dir():
         # Tentar em subpastas caso o Demucs tenha criado uma
-        for item in (storage_path / "stems" / project_id).iterdir():
+        for item in project_stems_dir.iterdir():
             if item.is_dir():
                 alt_path = item / "lyrics.json"
                 if alt_path.exists():
