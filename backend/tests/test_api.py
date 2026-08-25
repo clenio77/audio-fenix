@@ -168,11 +168,139 @@ class TestExportEndpoint:
             "/api/export",
             json={
                 "project_id": fake_id,
-                "volumes": {"vocals": 1.0, "drums": 0.8}
+                "volumes": {"vocals": 1.0, "drums": 0.8},
+                "mutes": {},
             }
         )
         
         assert response.status_code == 404
+
+    def test_export_skips_non_audio_stems(
+        self,
+        client: TestClient,
+        db_session,
+        sample_audio_bytes,
+        temp_dir,
+    ):
+        """
+        MIDI/MusicXML não podem ir para o ffmpeg.
+        Após a feature de partitura, esses artefatos são salvos como stems
+        e quebravam o export se fossem misturados com áudio.
+        """
+        import uuid
+        from unittest.mock import patch, MagicMock
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+
+        project_id = str(uuid.uuid4())
+        vocals_path = temp_dir / "vocals.wav"
+        midi_path = temp_dir / "song_transcription.mid"
+        score_path = temp_dir / "song_score.musicxml"
+        vocals_path.write_bytes(sample_audio_bytes)
+        midi_path.write_text("not-audio")
+        score_path.write_text("<score/>")
+
+        project = Project(
+            id=project_id,
+            original_filename="song.mp3",
+            original_file_path=str(temp_dir / "song.mp3"),
+            file_size_mb=1,
+            duration_seconds=10,
+            status=ProjectStatus.READY,
+        )
+        db_session.add(project)
+        db_session.add_all([
+            Stem(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                stem_type="vocals",
+                file_path=str(vocals_path),
+                file_size_mb=0.1,
+            ),
+            Stem(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                stem_type="midi",
+                file_path=str(midi_path),
+                file_size_mb=0.01,
+            ),
+            Stem(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                stem_type="score",
+                file_path=str(score_path),
+                file_size_mb=0.01,
+            ),
+        ])
+        db_session.commit()
+
+        mock_result = MagicMock(returncode=0, stderr="")
+        with patch("application.routes.export.subprocess.run", return_value=mock_result) as mock_run:
+            response = client.post(
+                "/api/export",
+                json={
+                    "project_id": project_id,
+                    "volumes": {"vocals": 1.0, "midi": 0.0, "score": 0.0},
+                    "mutes": {"vocals": False, "midi": True, "score": True},
+                    "format": "mp3",
+                },
+            )
+
+        assert response.status_code == 200
+        cmd = mock_run.call_args[0][0]
+        assert str(midi_path) not in cmd
+        assert str(score_path) not in cmd
+        assert str(vocals_path) in cmd
+
+    def test_safe_storage_path_blocks_dotdot(self):
+        """Guard de path deve rejeitar segmentos .. e separadores."""
+        import tempfile
+        from pathlib import Path
+        from fastapi import HTTPException
+        from application.routes.export import _safe_storage_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "exports" / "proj").mkdir(parents=True)
+
+            ok = _safe_storage_path(base, "exports", "proj", "mix.mp3")
+            assert ok.name == "mix.mp3"
+
+            for parts in [
+                ("exports", "proj", "../../secret.txt"),
+                ("exports", "..", "secret.txt"),
+                ("exports", "proj", "foo/bar"),
+            ]:
+                try:
+                    _safe_storage_path(base, *parts)
+                    assert False, f"should reject {parts}"
+                except HTTPException as exc:
+                    assert exc.status_code == 400
+
+
+class TestLyricsEndpoint:
+    """Testes para /api/lyrics — não deve 500 se o diretório de stems sumiu."""
+
+    def test_lyrics_missing_stems_dir_returns_empty(self, client: TestClient, db_session):
+        import uuid
+        from domain.models.project import Project, ProjectStatus
+
+        project_id = str(uuid.uuid4())
+        project = Project(
+            id=project_id,
+            original_filename="song.mp3",
+            original_file_path="/tmp/song.mp3",
+            file_size_mb=1,
+            duration_seconds=10,
+            status=ProjectStatus.READY,
+        )
+        db_session.add(project)
+        db_session.commit()
+
+        response = client.get(f"/api/lyrics/{project_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["lyrics"] == []
 
 
 class TestCORS:

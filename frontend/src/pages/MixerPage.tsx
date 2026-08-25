@@ -733,7 +733,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                         <h3 className="text-sm font-bold text-gray-300 tracking-wider">WAVEFORMS</h3>
                     </div>
                     <div className="space-y-2">
-                        {project.stems?.filter(stem => stem.type !== StemType.CLICK).map(stem => {
+                        {project.stems?.filter(stem =>
+                            [StemType.VOCALS, StemType.DRUMS, StemType.BASS, StemType.OTHER].includes(stem.type as StemType)
+                        ).map(stem => {
                             const config = stemConfig[stem.type as StemType]
                             const isMuted = mutes[stem.type as StemType] || (hasSoloActive && !solos[stem.type as StemType])
                             return (
