@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
+import { getEffectiveVolume } from '@/utils/stemPlayback'
 import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
@@ -171,32 +172,38 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         }
     }, [currentTime, chords])
 
-    // Atualizar volumes dos áudios
+    // Atualizar volumes dos áudios.
+    // Must re-run when loading flips false / stems arrive: while loading, the early
+    // return never mounts <audio>, so refs are empty on the first effect pass and
+    // default mutes (e.g. CLICK) would never reach the elements.
     useEffect(() => {
+        if (loading || !project?.stems?.length) return
+
         Object.entries(audioRefs.current).forEach(([stemType, audio]) => {
             if (audio) {
                 const stem = stemType as StemType
-                const isMuted = mutes[stem] || (hasSoloActive && !solos[stem])
+                const gain = getEffectiveVolume(stem, volumes, mutes, solos)
 
-                // Usar GainNode para volume (mais suave)
                 const gainNode = gainNodesRef.current[stemType]
                 if (gainNode) {
-                    gainNode.gain.value = isMuted ? 0 : volumes[stem] / 100
+                    gainNode.gain.value = gain
                 } else {
-                    audio.volume = isMuted ? 0 : volumes[stem] / 100
+                    audio.volume = gain
                 }
             }
         })
-    }, [volumes, mutes, solos, hasSoloActive])
+    }, [volumes, mutes, solos, loading, project?.stems])
 
-    // Atualizar playback rate (speed)
+    // Atualizar playback rate (speed) — same mount timing as volumes
     useEffect(() => {
+        if (loading || !project?.stems?.length) return
+
         Object.values(audioRefs.current).forEach(audio => {
             if (audio) {
                 audio.playbackRate = speed
             }
         })
-    }, [speed])
+    }, [speed, loading, project?.stems])
 
     // Atualizar tempo atual e verificar loop
     useEffect(() => {
