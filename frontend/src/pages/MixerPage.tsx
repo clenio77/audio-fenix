@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
+import { classifyStatusPollError } from '@/utils/statusPoll'
 import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
@@ -32,6 +33,7 @@ interface MixerPageProps {
 export default function MixerPage({ projectId, onBack }: MixerPageProps) {
     const [project, setProject] = useState<Project | null>(null)
     const [loading, setLoading] = useState(true)
+    const [statusError, setStatusError] = useState<string | null>(null)
     const [exporting, setExporting] = useState(false)
 
     // Estado do player
@@ -126,10 +128,15 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
     // Polling para verificar status
     useEffect(() => {
+        if (statusError) {
+            return
+        }
+
         const checkStatus = async () => {
             try {
                 const data = await apiService.getProjectStatus(projectId)
                 setProject(data)
+                setStatusError(null)
 
                 if (data.status === ProjectStatus.READY) {
                     setLoading(false)
@@ -141,6 +148,14 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 }
             } catch (error) {
                 console.error('Erro ao verificar status:', error)
+                // Terminal errors (expired/not found): stop the poll. Leaving
+                // loading=true forever spams GET /status every 3s and soft-locks
+                // the mixer on "Processando áudio…" (free-plan expiry → 410).
+                const outcome = classifyStatusPollError(error)
+                if (outcome.kind === 'stop') {
+                    setStatusError(outcome.message)
+                    setLoading(false)
+                }
             }
         }
 
@@ -153,7 +168,7 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         }, 3000)
 
         return () => clearInterval(interval)
-    }, [projectId, loading])
+    }, [projectId, loading, statusError])
 
     // Buscar acordes quando o projeto estiver pronto
     useEffect(() => {
@@ -325,6 +340,22 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         } finally {
             setExporting(false)
         }
+    }
+
+    if (statusError) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
+                <h2 className="text-3xl font-bold mb-3 text-white">Não foi possível abrir o projeto</h2>
+                <p className="text-gray-400 mb-6 text-center max-w-md">{statusError}</p>
+                <button
+                    onClick={onBack}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-all"
+                >
+                    <ArrowLeft className="w-4 h-4" />
+                    Voltar
+                </button>
+            </div>
+        )
     }
 
     if (loading || !project) {
