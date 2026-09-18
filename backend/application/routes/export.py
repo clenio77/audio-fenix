@@ -53,27 +53,41 @@ async def export_mix(
     
     # Construir filtro de áudio do ffmpeg
     # Exemplo: -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.5[a1];[a0][a1]amix=inputs=2"
+    #
+    # IMPORTANT: omit muted / zero-volume stems from amix inputs.
+    # ffmpeg amix defaults to normalize=1 and scales by the count of *active*
+    # inputs (by weight), not by audible amplitude. Feeding volume=0 silence
+    # still counts as an active input and incorrectly attenuates the mix
+    # (e.g. default muted click → quieter export; solo → ~1/N level).
     
     inputs = []
     filter_parts = []
     mix_inputs = []
+    audible_count = 0
     
-    for idx, stem in enumerate(stems):
+    for stem in stems:
         stem_type = stem.stem_type
         volume = request.volumes.get(stem_type, 1.0)
         is_muted = request.mutes.get(stem_type, False)
         
-        # Se mutado, volume = 0
-        if is_muted:
-            volume = 0.0
+        if is_muted or volume <= 0:
+            continue
         
+        idx = audible_count
         inputs.extend(["-i", stem.file_path])
         filter_parts.append(f"[{idx}:a]volume={volume}[a{idx}]")
         mix_inputs.append(f"[a{idx}]")
+        audible_count += 1
+    
+    if audible_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Nenhum stem audível para exportar (todos mutados ou volume zero)"
+        )
     
     # Combinar todos os filtros
     filter_complex = ";".join(filter_parts)
-    filter_complex += f";{''.join(mix_inputs)}amix=inputs={len(stems)}:duration=longest[out]"
+    filter_complex += f";{''.join(mix_inputs)}amix=inputs={audible_count}:duration=longest[out]"
     
     # Comando ffmpeg
     cmd = [
