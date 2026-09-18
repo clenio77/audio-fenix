@@ -168,11 +168,151 @@ class TestExportEndpoint:
             "/api/export",
             json={
                 "project_id": fake_id,
-                "volumes": {"vocals": 1.0, "drums": 0.8}
+                "volumes": {"vocals": 1.0, "drums": 0.8},
+                "mutes": {"vocals": False, "drums": False},
             }
         )
         
         assert response.status_code == 404
+
+    @patch("application.routes.export.subprocess.run")
+    def test_export_omits_muted_stems_from_amix(
+        self,
+        mock_run,
+        client: TestClient,
+        db_session,
+        temp_dir,
+        sample_audio_bytes,
+    ):
+        """
+        Muted stems must not be passed to ffmpeg amix.
+
+        amix normalize counts active inputs by weight; a volume=0 muted
+        track still attenuates the mix (solo → ~1/N). Omitting muted
+        stems keeps export levels aligned with the mixer.
+        """
+        from datetime import datetime, timedelta
+        import uuid
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+
+        mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+
+        project_id = str(uuid.uuid4())
+        project = Project(
+            id=project_id,
+            original_filename="song.wav",
+            original_file_path=str(temp_dir / "song.wav"),
+            file_size_mb=1,
+            duration_seconds=1,
+            status=ProjectStatus.READY,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db_session.add(project)
+
+        for stem_type in ("vocals", "drums", "bass", "other", "click"):
+            path = temp_dir / f"{stem_type}.wav"
+            path.write_bytes(sample_audio_bytes)
+            db_session.add(
+                Stem(
+                    id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    stem_type=stem_type,
+                    file_path=str(path),
+                    file_size_mb=1,
+                )
+            )
+        db_session.commit()
+
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": project_id,
+                "volumes": {
+                    "vocals": 1.0,
+                    "drums": 1.0,
+                    "bass": 1.0,
+                    "other": 1.0,
+                    "click": 0.5,
+                },
+                # Default mixer: click muted; also mute drums/bass/other (solo vocals)
+                "mutes": {
+                    "vocals": False,
+                    "drums": True,
+                    "bass": True,
+                    "other": True,
+                    "click": True,
+                },
+                "format": "mp3",
+            },
+        )
+
+        assert response.status_code == 200
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+
+        # Only vocals should be an -i input
+        input_paths = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-i"]
+        assert len(input_paths) == 1
+        assert input_paths[0].endswith("vocals.wav")
+
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        assert "amix=inputs=1:" in filter_complex
+        assert "drums" not in " ".join(input_paths)
+        assert "click" not in " ".join(input_paths)
+
+    @patch("application.routes.export.subprocess.run")
+    def test_export_all_muted_returns_400(
+        self,
+        mock_run,
+        client: TestClient,
+        db_session,
+        temp_dir,
+        sample_audio_bytes,
+    ):
+        """All-muted export should fail clearly instead of building an empty ffmpeg graph."""
+        from datetime import datetime, timedelta
+        import uuid
+        from domain.models.project import Project, ProjectStatus
+        from domain.models.stem import Stem
+
+        project_id = str(uuid.uuid4())
+        project = Project(
+            id=project_id,
+            original_filename="song.wav",
+            original_file_path=str(temp_dir / "song.wav"),
+            file_size_mb=1,
+            duration_seconds=1,
+            status=ProjectStatus.READY,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db_session.add(project)
+        path = temp_dir / "vocals.wav"
+        path.write_bytes(sample_audio_bytes)
+        db_session.add(
+            Stem(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                stem_type="vocals",
+                file_path=str(path),
+                file_size_mb=1,
+            )
+        )
+        db_session.commit()
+
+        response = client.post(
+            "/api/export",
+            json={
+                "project_id": project_id,
+                "volumes": {"vocals": 1.0},
+                "mutes": {"vocals": True},
+                "format": "mp3",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "audível" in response.json()["detail"]
+        mock_run.assert_not_called()
 
 
 class TestCORS:
