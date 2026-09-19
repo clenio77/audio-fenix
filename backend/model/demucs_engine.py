@@ -63,11 +63,14 @@ class DemucsEngine(AudioSeparator):
             logger.info(f"Executando comando: {' '.join(cmd)}")
             print(f"🎵 Executando Demucs: {' '.join(cmd)}")
             
+            # Keep under Celery soft_time_limit (540s) so TimeoutExpired is
+            # raised in-process and the task can mark the project FAILED.
+            # A 600s wait races the hard time_limit and can leave PROCESSING stuck.
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minutos de timeout
+                timeout=480
             )
             
             print(f"🎵 Demucs stdout: {result.stdout}")
@@ -97,7 +100,7 @@ class DemucsEngine(AudioSeparator):
             return stems
             
         except subprocess.TimeoutExpired:
-            raise AudioProcessingError("Processamento excedeu o tempo limite (10 minutos)")
+            raise AudioProcessingError("Processamento excedeu o tempo limite (8 minutos)")
         except Exception as e:
             logger.exception("Erro inesperado na separação")
             raise AudioProcessingError(f"Erro ao processar áudio: {str(e)}")
