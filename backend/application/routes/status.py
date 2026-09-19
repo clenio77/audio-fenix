@@ -10,7 +10,10 @@ from domain.database import get_db_session
 from domain.models.project import Project, ProjectStatus
 from domain.models.stem import Stem
 from application.schemas.project import ProjectStatusResponse, StemInfo
-from model.worker import celery_app
+from application.processing_watchdog import (
+    is_stale_processing,
+    STALE_PROCESSING_MESSAGE,
+)
 
 router = APIRouter()
 
@@ -40,6 +43,15 @@ async def get_project_status(
         project.status = ProjectStatus.EXPIRED
         db.commit()
         raise HTTPException(status_code=410, detail="Projeto expirado")
+
+    # Celery hard-kill / OOM never runs the task except block, so PROCESSING
+    # can stick forever and soft-lock the mixer loading poll.
+    if project.status == ProjectStatus.PROCESSING and is_stale_processing(
+        project.updated_at
+    ):
+        project.status = ProjectStatus.FAILED
+        project.error_message = STALE_PROCESSING_MESSAGE
+        db.commit()
     
     # Montar resposta baseada no status
     response = ProjectStatusResponse(
