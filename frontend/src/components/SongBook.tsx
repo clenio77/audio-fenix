@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { ChordInfo } from '@/types';
 import { FileText, Music, LayoutList, MonitorPlay } from 'lucide-react';
+import { getContainerScrollTop, shouldAutoScrollToLyric } from '@/utils/songbookScroll';
 
 interface LyricSegment {
     start: number;
@@ -27,16 +28,28 @@ export default function SongBook({ lyrics, chords, currentTime }: SongBookProps)
     // Encontrar o índice da frase atual
     const activeIndex = lyrics.findIndex(s => currentTime >= s.start - 0.2 && currentTime <= s.end);
 
-    // Scroll automático
+    // Scroll only when the active lyric changes — never on every currentTime tick.
+    // Scroll the lyrics container only; scrollIntoView would thrash the document
+    // and fight the fixed bottom player (~20 calls/sec while playing).
     useEffect(() => {
-        if (activeRef.current && containerRef.current && !focusMode) {
-            activeRef.current.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
-                inline: 'nearest'
-            });
-        }
-    }, [currentTime, focusMode]);
+        if (!shouldAutoScrollToLyric(activeIndex, focusMode)) return;
+        const container = containerRef.current;
+        const activeEl = activeRef.current;
+        if (!container || !activeEl) return;
+
+        const elRect = activeEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const relativeTop = elRect.top - containerRect.top + container.scrollTop;
+
+        container.scrollTo({
+            top: getContainerScrollTop(
+                relativeTop,
+                elRect.height,
+                container.clientHeight,
+            ),
+            behavior: 'smooth',
+        });
+    }, [activeIndex, focusMode]);
 
     // Filtrar letras se estiver no modo foco
     const visibleLyrics = focusMode && activeIndex !== -1
