@@ -121,9 +121,12 @@ class DemucsEngine(AudioSeparator):
         if input_path.stat().st_size == 0:
             return False, "Arquivo vazio"
         
-        supported_extensions = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
+        # Must stay aligned with AudioValidator / UploadPage allowlists.
+        # AAC was accepted at upload then rejected here, marking every .aac
+        # project FAILED after a successful upload.
+        supported_extensions = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"}
         if input_path.suffix.lower() not in supported_extensions:
-            return False, f"Formato não suportado. Use: {', '.join(supported_extensions)}"
+            return False, f"Formato não suportado. Use: {', '.join(sorted(supported_extensions))}"
         
         return True, ""
 
