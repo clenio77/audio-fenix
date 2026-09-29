@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { ProjectStatus, StemType, type Project, type ChordInfo } from '@/types'
+import { shouldAcceptPolledStatus } from '@/utils/statusPoll'
 import WaveformTrack from '@/components/WaveformTrack'
 import PitchControl from '@/components/PitchControl'
 import SpeedControl from '@/components/SpeedControl'
@@ -80,6 +81,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
     const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
     const audioContextRef = useRef<AudioContext | null>(null)
     const gainNodesRef = useRef<Record<string, GainNode>>({})
+    // Monotonic poll seq + sticky terminal status (avoid stale out-of-order responses)
+    const statusPollSeqRef = useRef(0)
+    const projectStatusRef = useRef<ProjectStatus | null>(null)
 
     // Estado do mixer
     const [volumes, setVolumes] = useState<Record<StemType, number>>({
@@ -124,11 +128,30 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
         }
     }, [])
 
+    // Clear sticky terminal status when opening a different project (must run
+    // before the poll effect below so a prior READY cannot block the new id).
+    useEffect(() => {
+        projectStatusRef.current = null
+    }, [projectId])
+
     // Polling para verificar status
     useEffect(() => {
+        let cancelled = false
+
         const checkStatus = async () => {
+            const seq = ++statusPollSeqRef.current
             try {
                 const data = await apiService.getProjectStatus(projectId)
+                // Drop superseded in-flight responses (out-of-order HTTP)
+                if (cancelled || seq !== statusPollSeqRef.current) {
+                    return
+                }
+                // Once READY/FAILED, ignore late PROCESSING/PENDING that would wipe stems
+                if (!shouldAcceptPolledStatus(projectStatusRef.current, data.status)) {
+                    return
+                }
+
+                projectStatusRef.current = data.status
                 setProject(data)
 
                 if (data.status === ProjectStatus.READY) {
@@ -140,7 +163,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                     alert('Erro no processamento: ' + data.error)
                 }
             } catch (error) {
-                console.error('Erro ao verificar status:', error)
+                if (!cancelled && seq === statusPollSeqRef.current) {
+                    console.error('Erro ao verificar status:', error)
+                }
             }
         }
 
@@ -152,7 +177,10 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
             }
         }, 3000)
 
-        return () => clearInterval(interval)
+        return () => {
+            cancelled = true
+            clearInterval(interval)
+        }
     }, [projectId, loading])
 
     // Buscar acordes quando o projeto estiver pronto
