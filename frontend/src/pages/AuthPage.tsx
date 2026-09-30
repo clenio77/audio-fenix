@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/store/authStore'
+import { formatApiErrorDetail } from '@/utils/apiError'
 import { Mail, Lock, LogIn, UserPlus, Loader2, Music } from 'lucide-react'
 
 interface AuthPageProps {
@@ -45,8 +46,7 @@ export default function AuthPage({ onSuccess }: AuthPageProps) {
                 onSuccess()
             }
         } catch (err: any) {
-            const message = err.response?.data?.detail || 'Erro ao processar solicitação'
-            setError(message)
+            setError(formatApiErrorDetail(err.response?.data?.detail))
         } finally {
             setIsLoading(false)
         }
@@ -115,6 +115,7 @@ export default function AuthPage({ onSuccess }: AuthPageProps) {
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         placeholder="Seu nome"
+                                        maxLength={100}
                                         className="w-full bg-gray-900/50 border border-gray-700 rounded-xl px-4 py-3 pl-11 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                                     />
                                     <UserPlus className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
