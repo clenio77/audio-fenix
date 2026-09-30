@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { Upload, FileAudio, AlertCircle } from 'lucide-react'
 import { apiService } from '@/services/api'
+import { formatApiErrorDetail } from '@/utils/apiError'
 
 interface UploadPageProps {
     onProjectCreated: (projectId: string) => void
@@ -76,7 +77,7 @@ export default function UploadPage({ onProjectCreated }: UploadPageProps) {
             const response = await apiService.uploadAudio(file)
             onProjectCreated(response.project_id)
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Erro ao fazer upload')
+            setError(formatApiErrorDetail(err.response?.data?.detail, 'Erro ao fazer upload'))
         } finally {
             setUploading(false)
         }
