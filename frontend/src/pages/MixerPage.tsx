@@ -23,6 +23,11 @@ import SpeedControl from '@/components/SpeedControl'
 import SheetMusicViewer from '@/components/SheetMusicViewer'
 import ChordList from '@/components/ChordList'
 import SongBook from '@/components/SongBook'
+import {
+    closeExportDownloadWindow,
+    navigateExportDownload,
+    openExportDownloadWindow,
+} from '@/utils/exportDownload'
 
 interface MixerPageProps {
     projectId: string
@@ -305,6 +310,9 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
 
     const handleExport = async () => {
         setExporting(true)
+        // Open while the click gesture is still active — window.open after
+        // await exportMix is blocked by browsers, silently dropping the file.
+        const downloadWindow = openExportDownloadWindow()
         try {
             const normalizedVolumes = Object.entries(volumes).reduce((acc, [key, value]) => {
                 acc[key as StemType] = value / 100
@@ -318,8 +326,12 @@ export default function MixerPage({ projectId, onBack }: MixerPageProps) {
                 format: 'mp3',
             })
 
-            window.open(apiService.getDownloadUrl(response.download_url), '_blank')
+            navigateExportDownload(
+                downloadWindow,
+                apiService.getDownloadUrl(response.download_url),
+            )
         } catch (error) {
+            closeExportDownloadWindow(downloadWindow)
             alert('Erro ao exportar mix')
             console.error(error)
         } finally {
