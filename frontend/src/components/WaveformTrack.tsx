@@ -6,6 +6,7 @@
  */
 import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import WaveSurfer from 'wavesurfer.js'
+import { buildWaveformVisualOptions } from '@/utils/waveformOptions'
 
 interface WaveformTrackProps {
     url: string
@@ -46,23 +47,16 @@ const WaveformTrack = forwardRef<WaveformTrackRef, WaveformTrackProps>(({
             wavesurferRef.current.destroy()
         }
 
-        // Criar instância apenas para visualização
-        const wavesurfer = WaveSurfer.create({
-            container: containerRef.current,
-            waveColor: color + '60', // Semi-transparente
-            progressColor: color,
-            cursorColor: '#fff',
-            cursorWidth: 2,
-            height,
-            barWidth: 2,
-            barGap: 1,
-            barRadius: 2,
-            normalize: true,
-            backend: 'WebAudio',
-            interact: false, // Interação controlada pelo MixerPage
-            hideScrollbar: true,
-            mediaControls: false,
-        })
+        // Visualization only — default media backend (not WebAudio).
+        // WebAudio creates an AudioContext per track that is never closed
+        // on destroy and exhausts the browser quota after a few mixer visits.
+        const wavesurfer = WaveSurfer.create(
+            buildWaveformVisualOptions({
+                container: containerRef.current,
+                color,
+                height,
+            })
+        )
 
         wavesurfer.load(url)
         wavesurferRef.current = wavesurfer
